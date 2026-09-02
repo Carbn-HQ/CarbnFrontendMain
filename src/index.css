@@ -1,0 +1,83 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  Carbn brand tokens
+  - Charcoal: primary (typography, dark sections)
+  - Sage: secondary (buttons, links, highlights)
+  - Off White: background
+  - Supporting: dividers / muted
+  - Clay Orange: accent, used sparingly (<5%)
+*/
+
+@layer base {
+  :root {
+    --background: 40 33% 96%;          /* Off White */
+    --foreground: 210 10% 15%;         /* Charcoal */
+
+    --card: 0 0% 100%;
+    --card-foreground: 210 10% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 210 10% 15%;
+
+    --primary: 100 15% 47%;            /* Sage - hero color */
+    --primary-foreground: 40 33% 96%;
+    --primary-hover: 100 18% 38%;      /* Dark sage */
+
+    --charcoal: 210 10% 15%;
+    --charcoal-foreground: 40 33% 96%;
+
+    --secondary: 40 20% 92%;
+    --secondary-foreground: 210 10% 15%;
+
+    --muted: 40 15% 90%;
+    --muted-foreground: 210 8% 40%;
+
+    --accent: 20 55% 45%;              /* Clay Orange */
+    --accent-foreground: 40 33% 96%;
+
+    --destructive: 0 65% 45%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 30 10% 85%;
+    --input: 30 10% 85%;
+    --ring: 100 15% 47%;
+
+    --radius: 0.5rem;
+
+    --shadow-soft: 0 1px 2px hsl(210 10% 15% / 0.04), 0 8px 24px -12px hsl(210 10% 15% / 0.08);
+    --shadow-card: 0 1px 2px hsl(210 10% 15% / 0.04), 0 12px 32px -16px hsl(210 10% 15% / 0.12);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Poppins', system-ui, sans-serif;
+    font-weight: 400;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Poppins', system-ui, sans-serif;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+}
+
+@layer utilities {
+  .bg-charcoal { background-color: hsl(var(--charcoal)); }
+  .text-charcoal { color: hsl(var(--charcoal)); }
+  .text-on-charcoal { color: hsl(var(--charcoal-foreground)); }
+  .shadow-soft { box-shadow: var(--shadow-soft); }
+  .shadow-card { box-shadow: var(--shadow-card); }
+  .container-carbn { @apply mx-auto w-full max-w-6xl px-6 md:px-10; }
+}
