@@ -9,7 +9,12 @@ const api = axios.create({
 
 api.interceptors.request.use((config) => {
   const token = getAccessToken();
-  if (token) {
+  const headers = config.headers as { get?: (name: string) => string | undefined; Authorization?: string; authorization?: string };
+  const existingAuth =
+    (typeof headers?.get === "function" ? headers.get("Authorization") : undefined) ||
+    headers?.Authorization ||
+    headers?.authorization;
+  if (token && !existingAuth) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   if (typeof FormData !== "undefined" && config.data instanceof FormData) {

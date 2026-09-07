@@ -19,7 +19,7 @@ export const joinWaitlist = async (email: string) => {
 
 export const setWaitlistUsername = async (
   leadId: string,
-  payload: { username: string; last_name?: string }
+  payload: { username: string; last_name?: string; full_name?: string }
 ) => {
   const response = await api.put(`/waitlist/${leadId}/username`, payload);
   return response.data;
@@ -37,6 +37,17 @@ export const loginMember = async (email: string, password: string) => {
         refresh_token: string;
       };
     };
+  };
+};
+
+export const redeemInvite = async (payload: {
+  token_hash: string;
+  type?: string;
+}) => {
+  const response = await api.post("/auth/redeem-invite", payload);
+  return response.data as {
+    success: boolean;
+    data: { access_token: string; refresh_token?: string };
   };
 };
 

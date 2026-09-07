@@ -3,51 +3,92 @@ import { Link, useNavigate } from "react-router-dom";
 import {
   getActivationProfile,
   loginMember,
+  redeemInvite,
   saveActivationProfile,
   setMemberPassword,
 } from "@/lib/carbnApi";
 import { getInviteToken, saveInviteToken, saveSession } from "@/lib/session";
 import { toast } from "@/hooks/use-toast";
 
-const readInviteToken = () => {
-  const hash = window.location.hash.replace(/^#/, "");
-  const hashParams = new URLSearchParams(hash);
-  const queryParams = new URLSearchParams(window.location.search);
-
-  return (
-    hashParams.get("access_token") ||
-    queryParams.get("access_token") ||
-    getInviteToken()
-  );
-};
-
 const inputClass =
-  "w-full rounded-xl border border-border bg-white px-5 py-3.5 text-base outline-none focus:ring-2 focus:ring-primary";
+  "w-full rounded-xl border border-border bg-white px-5 py-3.5 text-base outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-primary";
+
+const readInviteFromUrl = () => {
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const query = new URLSearchParams(window.location.search);
+
+  return {
+    activation: query.get("activation"),
+    tokenHash:
+      query.get("token_hash") ||
+      query.get("hashed_token") ||
+      (query.get("type") === "recovery" ? query.get("token") : null),
+    type: query.get("type") || hash.get("type") || "recovery",
+    accessToken: hash.get("access_token") || query.get("access_token"),
+    refreshToken: hash.get("refresh_token") || query.get("refresh_token"),
+  };
+};
 
 const SetPassword = () => {
   const navigate = useNavigate();
   const [step, setStep] = useState<1 | 2>(1);
   const [fullName, setFullName] = useState("");
   const [username, setUsername] = useState("");
+  const [fullNamePlaceholder, setFullNamePlaceholder] = useState("Full name");
+  const [usernamePlaceholder, setUsernamePlaceholder] = useState("Username");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [loadingInvite, setLoadingInvite] = useState(true);
   const [token, setToken] = useState<string | null>(null);
 
   useEffect(() => {
-    const inviteToken = readInviteToken();
-    if (inviteToken) {
-      saveInviteToken(inviteToken);
-      setToken(inviteToken);
-      window.history.replaceState({}, document.title, "/set-password");
-      getActivationProfile(inviteToken)
-        .then((response) => {
+    let cancelled = false;
+
+    const bootstrap = async () => {
+      const fromUrl = readInviteFromUrl();
+      let inviteToken =
+        fromUrl.activation || fromUrl.accessToken || getInviteToken();
+
+      try {
+        if (!fromUrl.activation && fromUrl.tokenHash) {
+          const redeemed = await redeemInvite({
+            token_hash: fromUrl.tokenHash,
+            type: fromUrl.type,
+          });
+          inviteToken = redeemed.data.access_token;
+        }
+
+        if (inviteToken) {
+          saveInviteToken(inviteToken);
+          if (!cancelled) setToken(inviteToken);
+          window.history.replaceState({}, document.title, "/set-password");
+
+          const response = await getActivationProfile(inviteToken);
           const profile = response.data;
-          if (profile?.full_name) setFullName(profile.full_name);
-          if (profile?.username) setUsername(profile.username);
-        })
-        .catch(() => {});
-    }
+          if (!cancelled && profile) {
+            if (profile.full_name) setFullNamePlaceholder(profile.full_name);
+            if (profile.username) setUsernamePlaceholder(profile.username);
+          }
+        }
+      } catch (error: unknown) {
+        const message =
+          (error as { response?: { data?: { message?: string } } })?.response?.data
+            ?.message || "Open the latest approval link from your email.";
+        toast({
+          title: "Invitation required",
+          description: message,
+          variant: "destructive",
+        });
+      } finally {
+        if (!cancelled) setLoadingInvite(false);
+      }
+    };
+
+    void bootstrap();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const requireToken = () => {
@@ -60,18 +101,30 @@ const SetPassword = () => {
     return false;
   };
 
+  const resolvedName = () =>
+    fullName.trim() ||
+    (fullNamePlaceholder !== "Full name" ? fullNamePlaceholder : "");
+
+  const resolvedUsername = () =>
+    username.trim() ||
+    (usernamePlaceholder !== "Username" ? usernamePlaceholder : "");
+
   const goToPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!requireToken()) return;
-    if (fullName.trim().split(/\s+/).length < 2) {
+
+    const nameToSave = resolvedName();
+    const usernameToSave = resolvedUsername();
+
+    if (!nameToSave) {
       toast({
         title: "Enter your full name",
-        description: "Include your first and last name.",
+        description: "This is stored on your CARBN profile.",
         variant: "destructive",
       });
       return;
     }
-    if (username.trim().length < 2) {
+    if (usernameToSave.length < 2) {
       toast({
         title: "Enter a username",
         description: "Use at least 2 characters.",
@@ -83,14 +136,16 @@ const SetPassword = () => {
     setSubmitting(true);
     try {
       await saveActivationProfile(token as string, {
-        full_name: fullName.trim(),
-        username: username.trim(),
+        full_name: nameToSave,
+        username: usernameToSave,
       });
+      setFullName(nameToSave);
+      setUsername(usernameToSave);
       setStep(2);
     } catch (error: unknown) {
       const message =
-        (error as { response?: { data?: { message?: string } } })?.response?.data?.message ||
-        "Could not save your name. Try again.";
+        (error as { response?: { data?: { message?: string } } })?.response?.data
+          ?.message || "Could not save your name. Try again.";
       toast({ title: "Could not save profile", description: message, variant: "destructive" });
     } finally {
       setSubmitting(false);
@@ -118,11 +173,13 @@ const SetPassword = () => {
 
     setSubmitting(true);
     try {
+      const nameToSave = resolvedName();
+      const usernameToSave = resolvedUsername();
       const result = await setMemberPassword(token as string, {
         password,
         confirm_password: confirmPassword,
-        full_name: fullName.trim(),
-        username: username.trim(),
+        full_name: nameToSave,
+        username: usernameToSave,
       });
       const email = result?.data?.member?.email || result?.data?.user?.email;
       if (email) {
@@ -132,7 +189,10 @@ const SetPassword = () => {
           refreshToken: login.data.session.refresh_token,
           member: login.data.member,
         });
-        toast({ title: "Account activated", description: `Welcome, ${fullName.trim().split(" ")[0]}.` });
+        toast({
+          title: "Account activated",
+          description: `Welcome, ${nameToSave.split(" ")[0] || usernameToSave}.`,
+        });
         navigate("/dashboard");
         return;
       }
@@ -140,8 +200,8 @@ const SetPassword = () => {
       navigate("/login");
     } catch (error: unknown) {
       const message =
-        (error as { response?: { data?: { message?: string } } })?.response?.data?.message ||
-        "Could not set your password. The invitation link may have expired.";
+        (error as { response?: { data?: { message?: string } } })?.response?.data
+          ?.message || "Could not set your password. The invitation link may have expired.";
       toast({ title: "Could not activate account", description: message, variant: "destructive" });
     } finally {
       setSubmitting(false);
@@ -163,34 +223,40 @@ const SetPassword = () => {
             <span className={step === 2 ? "text-primary" : "text-muted-foreground"}>2. Password</span>
           </div>
 
-          {step === 1 ? (
+          {loadingInvite ? (
+            <p className="text-sm text-muted-foreground">Opening your invitation…</p>
+          ) : step === 1 ? (
             <>
-              <h1 className="font-display text-2xl font-semibold text-charcoal">Your name</h1>
+              <h1 className="font-display text-2xl font-semibold text-charcoal">Your profile</h1>
               <p className="mt-2 text-sm text-muted-foreground">
-                Enter your full name and the username we should use on your dashboard.
+                Add your username and full name. These are saved to your account, then you will set a password.
               </p>
               <form onSubmit={goToPassword} className="mt-6 flex flex-col gap-4">
-                <input
-                  type="text"
-                  required
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Full name"
-                  className={inputClass}
-                />
-                <input
-                  type="text"
-                  required
-                  minLength={2}
-                  maxLength={40}
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Username"
-                  className={inputClass}
-                />
+                <label className="text-sm font-medium text-charcoal">
+                  Username
+                  <input
+                    type="text"
+                    minLength={2}
+                    maxLength={40}
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder={usernamePlaceholder}
+                    className={`${inputClass} mt-1.5`}
+                  />
+                </label>
+                <label className="text-sm font-medium text-charcoal">
+                  Full name
+                  <input
+                    type="text"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder={fullNamePlaceholder}
+                    className={`${inputClass} mt-1.5`}
+                  />
+                </label>
                 <button
                   type="submit"
-                  disabled={submitting}
+                  disabled={submitting || !token}
                   className="rounded-full bg-primary px-7 py-3.5 text-sm font-extrabold uppercase tracking-wider text-primary-foreground disabled:opacity-60"
                 >
                   {submitting ? "Saving..." : "Continue"}
@@ -225,7 +291,7 @@ const SetPassword = () => {
                   onClick={() => setStep(1)}
                   className="text-sm font-medium text-muted-foreground hover:text-charcoal"
                 >
-                  Back to name
+                  Back to profile
                 </button>
                 <button
                   type="submit"

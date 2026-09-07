@@ -8,7 +8,7 @@ const CompleteProfile = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [username, setUsername] = useState("");
-  const [lastName, setLastName] = useState("");
+  const [fullName, setFullName] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const inputClass =
@@ -21,21 +21,22 @@ const CompleteProfile = () => {
     try {
       const data = await setWaitlistUsername(id, {
         username: username.trim(),
-        last_name: lastName.trim() || undefined,
+        full_name: fullName.trim() || undefined,
+        last_name: fullName.trim().split(/\s+/).slice(1).join(" ") || undefined,
       });
       if (data?.success) {
         localStorage.setItem("carbn_user_firstname", username.trim());
-        if (lastName.trim()) {
-          localStorage.setItem("carbn_user_lastname", lastName.trim());
+        if (fullName.trim()) {
+          localStorage.setItem("carbn_user_fullname", fullName.trim());
         }
         toast({
-          title: "Username saved",
-          description: `Welcome, ${username.trim()}. We'll greet you with this name when you log in.`,
+          title: "Profile saved",
+          description: `Welcome, ${username.trim()}. We'll use this when you log in.`,
         });
         navigate("/registration-complete");
       } else {
         toast({
-          title: "Could not save username",
+          title: "Could not save profile",
           description: data?.message || "Please try again.",
           variant: "destructive",
         });
@@ -45,7 +46,7 @@ const CompleteProfile = () => {
         (error as { response?: { data?: { message?: string } } })?.response?.data?.message ||
         "Could not reach the server. Please try again.";
       toast({
-        title: "Could not save username",
+        title: "Could not save profile",
         description: message,
         variant: "destructive",
       });
@@ -67,7 +68,7 @@ const CompleteProfile = () => {
             Set your username
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Your application was received. Choose the name we should use when you log in.
+            Your application was received. Choose the username and full name we should store.
           </p>
 
           <form onSubmit={submit} className="mt-6 flex flex-col gap-4">
@@ -83,10 +84,10 @@ const CompleteProfile = () => {
             />
             <input
               type="text"
-              maxLength={40}
-              value={lastName}
-              onChange={(e) => setLastName(e.target.value)}
-              placeholder="Last name (optional)"
+              maxLength={80}
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              placeholder="Full name"
               className={inputClass}
             />
             <button
@@ -94,7 +95,7 @@ const CompleteProfile = () => {
               disabled={submitting}
               className="inline-flex items-center justify-center gap-2 rounded-full bg-primary px-7 py-3.5 font-extrabold uppercase tracking-wider text-sm text-primary-foreground transition-colors hover:bg-[hsl(var(--primary-hover))] disabled:opacity-60"
             >
-              {submitting ? "Saving..." : (<>Save username <ArrowRight className="h-4 w-4" /></>)}
+              {submitting ? "Saving..." : (<>Save profile <ArrowRight className="h-4 w-4" /></>)}
             </button>
           </form>
         </div>
