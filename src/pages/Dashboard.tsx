@@ -73,17 +73,22 @@ const HomeView = ({
   firstName,
   metrics,
   onOpenChat,
+  onLogActivity,
   onCheckin,
   checkingIn,
 }: {
   firstName: string;
   metrics: MetricsPayload | null;
   onOpenChat: () => void;
-  onCheckin: (workout: boolean) => void;
+  onLogActivity: () => void;
+  onCheckin: () => void;
   checkingIn: boolean;
 }) => {
   const scores = metrics?.scores;
   const capacity = scores?.capacity_score ?? 0;
+  const weeklySessions = scores?.weekly_workouts ?? 0;
+  const weeklyGoal = scores?.weekly_workout_goal;
+  const hasWeeklyGoal = weeklyGoal != null && weeklyGoal > 0;
 
   return (
     <div className="space-y-8">
@@ -184,34 +189,35 @@ const HomeView = ({
       <div className="grid gap-4 md:grid-cols-2">
         <div className="rounded-3xl border border-border bg-card p-6 shadow-soft">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-display text-xl font-semibold text-charcoal">Training</h2>
+            <h2 className="font-display text-xl font-semibold text-charcoal">Activity</h2>
             <Dumbbell className="h-4 w-4 text-primary" />
           </div>
           <p className="font-display text-4xl font-semibold text-charcoal">
-            {scores?.weekly_workouts ?? 0}
-            <span className="text-lg text-muted-foreground"> / {scores?.weekly_workout_goal ?? 4}</span>
+            {weeklySessions}
+            {hasWeeklyGoal ? (
+              <span className="text-lg text-muted-foreground"> / {weeklyGoal}</span>
+            ) : null}
           </p>
-          <p className="mt-1 text-sm text-muted-foreground">Workouts this week</p>
+          <p className="mt-1 text-sm text-muted-foreground">Training sessions this week</p>
           <div className="mt-4 h-2 overflow-hidden rounded-full bg-secondary">
             <div
               className="h-full rounded-full bg-primary"
-              style={{ width: `${scores?.workout_progress ?? 0}%` }}
+              style={{ width: `${hasWeeklyGoal ? scores?.workout_progress ?? 0 : 0}%` }}
             />
           </div>
           <div className="mt-5 flex gap-2">
             <button
               disabled={checkingIn}
-              onClick={() => onCheckin(false)}
+              onClick={onCheckin}
               className="flex-1 rounded-full border border-border px-4 py-2 text-xs font-extrabold uppercase tracking-wider disabled:opacity-60"
             >
               Log check-in
             </button>
             <button
-              disabled={checkingIn}
-              onClick={() => onCheckin(true)}
-              className="flex-1 rounded-full bg-primary px-4 py-2 text-xs font-extrabold uppercase tracking-wider text-primary-foreground disabled:opacity-60"
+              onClick={onLogActivity}
+              className="flex-1 rounded-full bg-primary px-4 py-2 text-xs font-extrabold uppercase tracking-wider text-primary-foreground"
             >
-              Log workout
+              Log Activity
             </button>
           </div>
         </div>
@@ -236,7 +242,9 @@ const HomeView = ({
               </li>
             ))}
             {!metrics?.activity?.length && (
-              <li className="py-6 text-sm text-muted-foreground">No activity yet. Log a check-in to start.</li>
+              <li className="py-6 text-sm text-muted-foreground">
+                No activity yet. Log an activity with Daniel to start.
+              </li>
             )}
           </ul>
         </div>
@@ -254,15 +262,26 @@ const attachmentKind = (file: File): ChatAttachment["kind"] | null => {
   return null;
 };
 
+const activityOpener = (firstName: string) =>
+  `Let's log an activity, ${firstName}. What did you do — lift, walk, run, yoga, swim, or something else? Paste the whole session if you have it, or start with the type and I'll only ask for anything important that's missing.`;
+
 const ChatView = ({
   firstName,
+  intent,
   onMetricsUpdate,
 }: {
   firstName: string;
+  intent?: "activity" | null;
   onMetricsUpdate: (metrics: MetricsPayload) => void;
 }) => {
+  const activityMode = intent === "activity";
   const [messages, setMessages] = useState<{ from: "user" | "daniel"; text: string }[]>([
-    { from: "daniel", text: `Hey ${firstName} — how did today go? Sleep, energy, anything on your mind?` },
+    {
+      from: "daniel",
+      text: activityMode
+        ? activityOpener(firstName)
+        : `Hey ${firstName} — how did today go? Sleep, energy, anything on your mind?`,
+    },
   ]);
   const [input, setInput] = useState("");
   const [files, setFiles] = useState<ChatAttachment[]>([]);
@@ -277,16 +296,17 @@ const ChatView = ({
     getChatHistory()
       .then((response) => {
         const history = response.data || [];
-        if (!history.length) return;
+        const loaded = (history || []).map((item) => ({
+          from: (item.role === "user" ? "user" : "daniel") as "user" | "daniel",
+          text: item.content,
+        }));
+        if (!loaded.length) return;
         setMessages(
-          history.map((item) => ({
-            from: item.role === "user" ? "user" : "daniel",
-            text: item.content,
-          }))
+          activityMode ? [...loaded, { from: "daniel", text: activityOpener(firstName) }] : loaded
         );
       })
       .catch(() => {});
-  }, []);
+  }, [activityMode, firstName]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -380,7 +400,7 @@ const ChatView = ({
     setFiles([]);
     setSending(true);
     try {
-      const response = await sendChatQuestion(text, outgoing);
+      const response = await sendChatQuestion(text, outgoing, activityMode ? "activity" : undefined);
       setMessages((m) => [...m, { from: "daniel", text: response.data.answer }]);
       if (response.data.metrics) {
         onMetricsUpdate(response.data.metrics);
@@ -400,7 +420,9 @@ const ChatView = ({
       <div className="mb-4">
         <h1 className="font-display text-2xl font-semibold text-charcoal">Chat with Daniel</h1>
         <p className="text-sm text-muted-foreground">
-          Text, voice, photos or PDFs — Daniel updates your capacity score from what you share.
+          {activityMode
+            ? "Activity logging — Daniel will collect the session and update your dashboard from it."
+            : "Text, voice, photos or PDFs — Daniel updates your capacity score from what you share."}
         </p>
       </div>
       <div className="flex-1 space-y-3 overflow-y-auto rounded-3xl border border-border bg-card p-5">
@@ -475,7 +497,13 @@ const ChatView = ({
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder={recording ? "Recording…" : "Message Daniel, or attach a file…"}
+          placeholder={
+            recording
+              ? "Recording…"
+              : activityMode
+                ? "Describe the activity, or paste the full session…"
+                : "Message Daniel, or attach a file…"
+          }
           className="flex-1 rounded-full border border-border bg-card px-5 py-3 text-sm text-charcoal outline-none focus:border-primary"
         />
         <button
@@ -1236,6 +1264,7 @@ const Dashboard = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [metrics, setMetrics] = useState<MetricsPayload | null>(null);
   const [checkingIn, setCheckingIn] = useState(false);
+  const [chatIntent, setChatIntent] = useState<"activity" | null>(null);
   const storedMember = getStoredMember();
   const storedFullName =
     storedMember?.full_name ||
@@ -1297,21 +1326,30 @@ const Dashboard = () => {
   };
 
   const go = (v: View) => {
+    if (v !== "chat") {
+      setChatIntent(null);
+    }
     setView(v);
     setSidebarOpen(false);
   };
 
-  const onCheckin = async (workout: boolean) => {
+  const openChat = (intent: "activity" | null = null) => {
+    setChatIntent(intent);
+    setView("chat");
+    setSidebarOpen(false);
+  };
+
+  const onCheckin = async () => {
     setCheckingIn(true);
     try {
       const response = await submitCheckin({
-        workout_completed: workout,
+        workout_completed: false,
         energy_score: metrics?.scores.energy_score,
         sleep_hours: metrics?.scores.sleep_hours,
       });
       setMetrics(response.data);
       toast({
-        title: workout ? "Workout logged" : "Check-in saved",
+        title: "Check-in saved",
         description: response.data?.scores
           ? `Capacity is now ${response.data.scores.capacity_score}/100`
           : undefined,
@@ -1351,7 +1389,7 @@ const Dashboard = () => {
             return (
               <button
                 key={n.id}
-                onClick={() => go(n.id)}
+                onClick={() => (n.id === "chat" ? openChat(null) : go(n.id))}
                 className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-colors ${
                   active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary hover:text-charcoal"
                 }`}
@@ -1387,12 +1425,15 @@ const Dashboard = () => {
             <HomeView
               firstName={firstName}
               metrics={metrics}
-              onOpenChat={() => go("chat")}
+              onOpenChat={() => openChat(null)}
+              onLogActivity={() => openChat("activity")}
               onCheckin={onCheckin}
               checkingIn={checkingIn}
             />
           )}
-          {view === "chat" && <ChatView firstName={firstName} onMetricsUpdate={setMetrics} />}
+          {view === "chat" && (
+            <ChatView firstName={firstName} intent={chatIntent} onMetricsUpdate={setMetrics} />
+          )}
           {view === "account" && (
             <AccountView
               fullName={fullName}

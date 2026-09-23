@@ -168,10 +168,17 @@ export const createSupportRequest = async (payload: {
   return response.data as { success: boolean; message: string; data: SupportRequest };
 };
 
-export const sendChatQuestion = async (question: string, files: File[] = []) => {
+export const sendChatQuestion = async (
+  question: string,
+  files: File[] = [],
+  context?: string
+) => {
   const form = new FormData();
   if (question.trim()) {
     form.append("question", question.trim());
+  }
+  if (context) {
+    form.append("context", context);
   }
   files.forEach((file) => form.append("files", file));
 
@@ -209,7 +216,7 @@ export interface MetricsPayload {
     recovery_score: number;
     sleep_hours: number;
     weekly_workouts: number;
-    weekly_workout_goal: number;
+    weekly_workout_goal: number | null;
     workout_progress: number;
     steps_today: number;
     resting_hr: number;
