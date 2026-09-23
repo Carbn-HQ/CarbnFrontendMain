@@ -136,6 +136,30 @@ export const getSupportRequest = async (id: string) => {
   return response.data as { success: boolean; data: SupportRequest };
 };
 
+export interface EmailChangeRequest {
+  id: string;
+  current_email: string;
+  new_email: string;
+  reason: string;
+  status: string;
+  status_label: string;
+  created_at: string;
+  reviewed_at?: string | null;
+}
+
+export const getEmailChangeRequests = async () => {
+  const response = await api.get("/support/email-change");
+  return response.data as { success: boolean; data: EmailChangeRequest[] };
+};
+
+export const createEmailChangeRequest = async (payload: {
+  new_email: string;
+  reason: string;
+}) => {
+  const response = await api.post("/support/email-change", payload);
+  return response.data as { success: boolean; message: string; data: EmailChangeRequest };
+};
+
 export const createSupportRequest = async (payload: {
   category: string;
   message: string;

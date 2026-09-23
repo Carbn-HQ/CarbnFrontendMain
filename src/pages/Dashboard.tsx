@@ -25,14 +25,17 @@ import {
 import { toast } from "@/hooks/use-toast";
 import {
   changeMemberPassword,
+  createEmailChangeRequest,
   createSupportRequest,
   getChatHistory,
   getCurrentMember,
+  getEmailChangeRequests,
   getMetrics,
   getSupportRequests,
   sendChatQuestion,
   submitCheckin,
   updateMemberProfile,
+  type EmailChangeRequest,
   type MetricsPayload,
   type SupportRequest,
 } from "@/lib/carbnApi";
@@ -492,10 +495,12 @@ const AccountView = ({
   fullName,
   email,
   onProfileSaved,
+  onEmailChanged,
 }: {
   fullName: string;
   email: string;
   onProfileSaved: (profile: { firstName: string; fullName: string }) => void;
+  onEmailChanged: (nextEmail: string) => void;
 }) => {
   const [name, setName] = useState(fullName);
   const [saving, setSaving] = useState(false);
@@ -503,10 +508,55 @@ const AccountView = ({
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [savingPassword, setSavingPassword] = useState(false);
+  const [emailModalOpen, setEmailModalOpen] = useState(false);
+  const [nextEmail, setNextEmail] = useState("");
+  const [emailReason, setEmailReason] = useState("");
+  const [savingEmailChange, setSavingEmailChange] = useState(false);
+  const [emailChange, setEmailChange] = useState<EmailChangeRequest | null>(null);
 
   useEffect(() => {
     setName(fullName);
   }, [fullName]);
+
+  useEffect(() => {
+    void getEmailChangeRequests()
+      .then((response) => {
+        const latest = (response.data || [])[0] || null;
+        setEmailChange(latest);
+      })
+      .catch(() => {});
+
+    const token = getAccessToken();
+    if (!token) {
+      return;
+    }
+
+    return connectRealtime({
+      role: "user",
+      token,
+      onEvent: (event, payload) => {
+        const next = payload.request as EmailChangeRequest | undefined;
+        if (event !== "email_change:updated" || !next?.id) {
+          return;
+        }
+        setEmailChange(next);
+        if (next.status === "approved" && next.new_email) {
+          onEmailChanged(next.new_email);
+          const member = getStoredMember();
+          if (member) {
+            saveSession({
+              accessToken: getAccessToken() || "",
+              member: { ...member, email: next.new_email },
+            });
+          }
+          toast({
+            title: "Email updated",
+            description: `Your login email is now ${next.new_email}.`,
+          });
+        }
+      },
+    });
+  }, [onEmailChanged]);
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -600,6 +650,49 @@ const AccountView = ({
     }
   };
 
+  const submitEmailChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!nextEmail.trim() || nextEmail.trim().toLowerCase() === email.toLowerCase()) {
+      toast({
+        title: "Check the new email",
+        description: "Enter a different email address.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (emailReason.trim().length < 8) {
+      toast({
+        title: "Add a reason",
+        description: "Please explain why you need to change your email.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSavingEmailChange(true);
+    try {
+      const response = await createEmailChangeRequest({
+        new_email: nextEmail.trim(),
+        reason: emailReason.trim(),
+      });
+      setEmailChange(response.data);
+      setEmailModalOpen(false);
+      setNextEmail("");
+      setEmailReason("");
+      toast({
+        title: "Request sent",
+        description: "The CARBN team will review your email change request.",
+      });
+    } catch (error: unknown) {
+      const message =
+        (error as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+        "Could not submit your email change request.";
+      toast({ title: "Could not send", description: message, variant: "destructive" });
+    } finally {
+      setSavingEmailChange(false);
+    }
+  };
+
   return (
     <div className="max-w-xl space-y-6">
       <div>
@@ -629,6 +722,19 @@ const AccountView = ({
             disabled
             className="mt-1.5 w-full rounded-full border border-border bg-background px-5 py-3 text-sm outline-none opacity-70"
           />
+          <button
+            type="button"
+            onClick={() => setEmailModalOpen(true)}
+            disabled={emailChange?.status === "pending"}
+            className="mt-2 text-sm font-medium text-primary hover:underline disabled:opacity-60 disabled:no-underline"
+          >
+            Need to change email? Contact support
+          </button>
+          {emailChange?.status === "pending" ? (
+            <p className="mt-2 text-sm text-muted-foreground">
+              A request to change your email to {emailChange.new_email} is waiting for review.
+            </p>
+          ) : null}
         </div>
         <button
           type="submit"
@@ -692,6 +798,86 @@ const AccountView = ({
           {savingPassword ? "Updating..." : "Update password"}
         </button>
       </form>
+
+      {emailModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-charcoal/50 p-4">
+          <form
+            onSubmit={submitEmailChange}
+            className="w-full max-w-md space-y-4 rounded-3xl border border-border bg-card p-6 shadow-soft"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="font-display text-xl font-semibold text-charcoal">Change email</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Send a request to the CARBN team. Your email stays the same until they approve it.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEmailModalOpen(false)}
+                className="text-muted-foreground hover:text-charcoal"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                Current email
+              </label>
+              <input
+                type="email"
+                value={email}
+                disabled
+                className="mt-1.5 w-full rounded-full border border-border bg-background px-5 py-3 text-sm opacity-70"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                New email
+              </label>
+              <input
+                type="email"
+                value={nextEmail}
+                onChange={(e) => setNextEmail(e.target.value)}
+                required
+                placeholder="you@newemail.com"
+                className="mt-1.5 w-full rounded-full border border-border bg-background px-5 py-3 text-sm outline-none focus:border-primary"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                Why do you need to change it?
+              </label>
+              <textarea
+                value={emailReason}
+                onChange={(e) => setEmailReason(e.target.value)}
+                required
+                minLength={8}
+                rows={4}
+                placeholder="Explain the reason so the team can review this request."
+                className="mt-1.5 w-full rounded-2xl border border-border bg-background px-5 py-3 text-sm outline-none focus:border-primary"
+              />
+            </div>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setEmailModalOpen(false)}
+                className="flex-1 rounded-full border border-border px-6 py-3 text-sm font-medium text-charcoal"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={savingEmailChange}
+                className="flex-1 rounded-full bg-primary px-6 py-3 text-sm font-extrabold uppercase tracking-wider text-primary-foreground disabled:opacity-60"
+              >
+                {savingEmailChange ? "Sending..." : "Submit request"}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </div>
   );
 };
@@ -741,11 +927,15 @@ const SupportView = () => {
   const [requests, setRequests] = useState<SupportRequest[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<ReplyFilter>("all");
+  const [categoryFilter, setCategoryFilter] = useState("all");
   const [loading, setLoading] = useState(true);
 
-  const repliedCount = requests.filter(isReplied).length;
-  const unrepliedCount = requests.length - repliedCount;
-  const visibleRequests = requests.filter((request) => {
+  const byCategory = requests.filter(
+    (request) => categoryFilter === "all" || request.category === categoryFilter
+  );
+  const repliedCount = byCategory.filter(isReplied).length;
+  const unrepliedCount = byCategory.length - repliedCount;
+  const byReply = requests.filter((request) => {
     if (filter === "replied") {
       return isReplied(request);
     }
@@ -754,10 +944,21 @@ const SupportView = () => {
     }
     return true;
   });
+  const visibleRequests = byReply.filter(
+    (request) => categoryFilter === "all" || request.category === categoryFilter
+  );
   const filters: { id: ReplyFilter; label: string; count: number }[] = [
-    { id: "all", label: "All", count: requests.length },
+    { id: "all", label: "All", count: byCategory.length },
     { id: "unreplied", label: "Unreplied", count: unrepliedCount },
     { id: "replied", label: "Replied", count: repliedCount },
+  ];
+  const categoryFilters = [
+    { id: "all", label: "All categories", count: byReply.length },
+    ...SUPPORT_CATEGORIES.map((item) => ({
+      id: item.id,
+      label: item.label,
+      count: byReply.filter((request) => request.category === item.id).length,
+    })),
   ];
 
   const upsertRequest = (next: SupportRequest, expand = false) => {
@@ -924,13 +1125,29 @@ const SupportView = () => {
             </button>
           ))}
         </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {categoryFilters.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setCategoryFilter(item.id)}
+              className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                categoryFilter === item.id
+                  ? "bg-charcoal text-white"
+                  : "border border-border bg-background text-muted-foreground hover:text-charcoal"
+              }`}
+            >
+              {item.label} {item.count}
+            </button>
+          ))}
+        </div>
         {loading ? (
           <p className="mt-4 text-sm text-muted-foreground">Loading your requests…</p>
         ) : requests.length === 0 ? (
           <p className="mt-4 text-sm text-muted-foreground">You have not submitted any requests yet.</p>
         ) : visibleRequests.length === 0 ? (
           <p className="mt-4 text-sm text-muted-foreground">
-            {filter === "replied" ? "No replied requests." : "No unreplied requests."}
+            No requests match these filters.
           </p>
         ) : (
           <div className="mt-4 overflow-x-auto">
@@ -1184,6 +1401,7 @@ const Dashboard = () => {
                 setFirstName(nextFirst);
                 setFullName(nextFull);
               }}
+              onEmailChanged={setEmail}
             />
           )}
           {view === "support" && <SupportView />}
