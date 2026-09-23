@@ -33,7 +33,6 @@ import {
   getMetrics,
   getSupportRequests,
   sendChatQuestion,
-  submitCheckin,
   updateMemberProfile,
   type EmailChangeRequest,
   type MetricsPayload,
@@ -75,14 +74,12 @@ const HomeView = ({
   onOpenChat,
   onLogActivity,
   onCheckin,
-  checkingIn,
 }: {
   firstName: string;
   metrics: MetricsPayload | null;
   onOpenChat: () => void;
   onLogActivity: () => void;
   onCheckin: () => void;
-  checkingIn: boolean;
 }) => {
   const scores = metrics?.scores;
   const capacity = scores?.capacity_score ?? 0;
@@ -207,11 +204,10 @@ const HomeView = ({
           </div>
           <div className="mt-5 flex gap-2">
             <button
-              disabled={checkingIn}
               onClick={onCheckin}
-              className="flex-1 rounded-full border border-border px-4 py-2 text-xs font-extrabold uppercase tracking-wider disabled:opacity-60"
+              className="flex-1 rounded-full border border-border px-4 py-2 text-xs font-extrabold uppercase tracking-wider"
             >
-              Log check-in
+              Check in with Daniel
             </button>
             <button
               onClick={onLogActivity}
@@ -265,22 +261,34 @@ const attachmentKind = (file: File): ChatAttachment["kind"] | null => {
 const activityOpener = (firstName: string) =>
   `Let's log an activity, ${firstName}. What did you do — lift, walk, run, yoga, swim, or something else? Paste the whole session if you have it, or start with the type and I'll only ask for anything important that's missing.`;
 
+const checkinOpener = (firstName: string) =>
+  `Let's check in, ${firstName}. How are energy, recovery and sleep looking — and how confident do you feel today? Share as much or as little as you have.`;
+
+const chatOpener = (firstName: string, intent?: "activity" | "checkin" | null) => {
+  if (intent === "activity") {
+    return activityOpener(firstName);
+  }
+  if (intent === "checkin") {
+    return checkinOpener(firstName);
+  }
+  return `Hey ${firstName} — how did today go? Sleep, energy, anything on your mind?`;
+};
+
 const ChatView = ({
   firstName,
   intent,
   onMetricsUpdate,
 }: {
   firstName: string;
-  intent?: "activity" | null;
+  intent?: "activity" | "checkin" | null;
   onMetricsUpdate: (metrics: MetricsPayload) => void;
 }) => {
   const activityMode = intent === "activity";
+  const checkinMode = intent === "checkin";
   const [messages, setMessages] = useState<{ from: "user" | "daniel"; text: string }[]>([
     {
       from: "daniel",
-      text: activityMode
-        ? activityOpener(firstName)
-        : `Hey ${firstName} — how did today go? Sleep, energy, anything on your mind?`,
+      text: chatOpener(firstName, intent),
     },
   ]);
   const [input, setInput] = useState("");
@@ -302,11 +310,11 @@ const ChatView = ({
         }));
         if (!loaded.length) return;
         setMessages(
-          activityMode ? [...loaded, { from: "daniel", text: activityOpener(firstName) }] : loaded
+          intent ? [...loaded, { from: "daniel", text: chatOpener(firstName, intent) }] : loaded
         );
       })
       .catch(() => {});
-  }, [activityMode, firstName]);
+  }, [intent, firstName]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -400,7 +408,11 @@ const ChatView = ({
     setFiles([]);
     setSending(true);
     try {
-      const response = await sendChatQuestion(text, outgoing, activityMode ? "activity" : undefined);
+      const response = await sendChatQuestion(
+        text,
+        outgoing,
+        activityMode ? "activity" : checkinMode ? "checkin" : undefined
+      );
       setMessages((m) => [...m, { from: "daniel", text: response.data.answer }]);
       if (response.data.metrics) {
         onMetricsUpdate(response.data.metrics);
@@ -422,7 +434,9 @@ const ChatView = ({
         <p className="text-sm text-muted-foreground">
           {activityMode
             ? "Activity logging — Daniel will collect the session and update your dashboard from it."
-            : "Text, voice, photos or PDFs — Daniel updates your capacity score from what you share."}
+            : checkinMode
+              ? "Check-in — Daniel will collect how you're doing and update your dashboard from it."
+              : "Text, voice, photos or PDFs — Daniel updates your capacity score from what you share."}
         </p>
       </div>
       <div className="flex-1 space-y-3 overflow-y-auto rounded-3xl border border-border bg-card p-5">
@@ -502,7 +516,9 @@ const ChatView = ({
               ? "Recording…"
               : activityMode
                 ? "Describe the activity, or paste the full session…"
-                : "Message Daniel, or attach a file…"
+                : checkinMode
+                  ? "Share energy, sleep, recovery, confidence…"
+                  : "Message Daniel, or attach a file…"
           }
           className="flex-1 rounded-full border border-border bg-card px-5 py-3 text-sm text-charcoal outline-none focus:border-primary"
         />
@@ -1263,8 +1279,7 @@ const Dashboard = () => {
   const [view, setView] = useState<View>("home");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [metrics, setMetrics] = useState<MetricsPayload | null>(null);
-  const [checkingIn, setCheckingIn] = useState(false);
-  const [chatIntent, setChatIntent] = useState<"activity" | null>(null);
+  const [chatIntent, setChatIntent] = useState<"activity" | "checkin" | null>(null);
   const storedMember = getStoredMember();
   const storedFullName =
     storedMember?.full_name ||
@@ -1333,35 +1348,10 @@ const Dashboard = () => {
     setSidebarOpen(false);
   };
 
-  const openChat = (intent: "activity" | null = null) => {
+  const openChat = (intent: "activity" | "checkin" | null = null) => {
     setChatIntent(intent);
     setView("chat");
     setSidebarOpen(false);
-  };
-
-  const onCheckin = async () => {
-    setCheckingIn(true);
-    try {
-      const response = await submitCheckin({
-        workout_completed: false,
-        energy_score: metrics?.scores.energy_score,
-        sleep_hours: metrics?.scores.sleep_hours,
-      });
-      setMetrics(response.data);
-      toast({
-        title: "Check-in saved",
-        description: response.data?.scores
-          ? `Capacity is now ${response.data.scores.capacity_score}/100`
-          : undefined,
-      });
-    } catch (error: unknown) {
-      const message =
-        (error as { response?: { data?: { message?: string } } })?.response?.data?.message ||
-        "Could not save your check-in.";
-      toast({ title: "Could not save check-in", description: message, variant: "destructive" });
-    } finally {
-      setCheckingIn(false);
-    }
   };
 
   return (
@@ -1427,8 +1417,7 @@ const Dashboard = () => {
               metrics={metrics}
               onOpenChat={() => openChat(null)}
               onLogActivity={() => openChat("activity")}
-              onCheckin={onCheckin}
-              checkingIn={checkingIn}
+              onCheckin={() => openChat("checkin")}
             />
           )}
           {view === "chat" && (
