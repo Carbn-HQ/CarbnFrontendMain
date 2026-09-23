@@ -712,6 +712,8 @@ const formatSupportDate = (iso: string) =>
     year: "numeric",
   });
 
+type ReplyFilter = "all" | "unreplied" | "replied";
+
 const requestReplies = (request: SupportRequest) => {
   if (request.replies?.length) {
     return request.replies;
@@ -729,13 +731,34 @@ const requestReplies = (request: SupportRequest) => {
   return [];
 };
 
+const isReplied = (request: SupportRequest) =>
+  request.status === "replied" || requestReplies(request).length > 0;
+
 const SupportView = () => {
   const [category, setCategory] = useState("");
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [requests, setRequests] = useState<SupportRequest[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<ReplyFilter>("all");
   const [loading, setLoading] = useState(true);
+
+  const repliedCount = requests.filter(isReplied).length;
+  const unrepliedCount = requests.length - repliedCount;
+  const visibleRequests = requests.filter((request) => {
+    if (filter === "replied") {
+      return isReplied(request);
+    }
+    if (filter === "unreplied") {
+      return !isReplied(request);
+    }
+    return true;
+  });
+  const filters: { id: ReplyFilter; label: string; count: number }[] = [
+    { id: "all", label: "All", count: requests.length },
+    { id: "unreplied", label: "Unreplied", count: unrepliedCount },
+    { id: "replied", label: "Replied", count: repliedCount },
+  ];
 
   const upsertRequest = (next: SupportRequest, expand = false) => {
     setRequests((current) => {
@@ -875,10 +898,40 @@ const SupportView = () => {
 
       <div className="rounded-3xl border border-border bg-card p-6 shadow-soft">
         <h2 className="font-display text-xl font-semibold text-charcoal">Your requests</h2>
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <div className="rounded-2xl border border-border bg-background px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Unreplied</p>
+            <p className="mt-1 font-display text-2xl font-semibold text-charcoal">{unrepliedCount}</p>
+          </div>
+          <div className="rounded-2xl border border-border bg-background px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Replied</p>
+            <p className="mt-1 font-display text-2xl font-semibold text-charcoal">{repliedCount}</p>
+          </div>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {filters.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setFilter(item.id)}
+              className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                filter === item.id
+                  ? "bg-primary text-primary-foreground"
+                  : "border border-border bg-background text-muted-foreground hover:text-charcoal"
+              }`}
+            >
+              {item.label} {item.count}
+            </button>
+          ))}
+        </div>
         {loading ? (
           <p className="mt-4 text-sm text-muted-foreground">Loading your requests…</p>
         ) : requests.length === 0 ? (
           <p className="mt-4 text-sm text-muted-foreground">You have not submitted any requests yet.</p>
+        ) : visibleRequests.length === 0 ? (
+          <p className="mt-4 text-sm text-muted-foreground">
+            {filter === "replied" ? "No replied requests." : "No unreplied requests."}
+          </p>
         ) : (
           <div className="mt-4 overflow-x-auto">
             <table className="w-full min-w-[420px] text-left text-sm">
@@ -891,7 +944,7 @@ const SupportView = () => {
                 </tr>
               </thead>
               <tbody>
-                {requests.map((request) => {
+                {visibleRequests.map((request) => {
                   const replies = requestReplies(request);
                   const isExpanded = expandedId === request.id;
                   const hasReply = replies.length > 0;
@@ -926,7 +979,7 @@ const SupportView = () => {
                             {hasReply ? (
                               <div className="mt-4 space-y-3 border-t border-border pt-4">
                                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                                  Reply
+                                  {replies.length > 1 ? "Replies" : "Reply"}
                                 </p>
                                 {replies.map((reply) => (
                                   <div key={reply.id} className="rounded-2xl bg-card px-4 py-3">
