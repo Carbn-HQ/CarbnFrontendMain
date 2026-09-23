@@ -9,12 +9,61 @@ export const checkWaitlistEmail = async (email: string) => {
     success: boolean;
     registered: boolean;
     message?: string;
+    apply_url?: string;
   };
 };
 
 export const joinWaitlist = async (email: string) => {
   const response = await api.post("/waitlist", { email });
-  return response.data;
+  return response.data as {
+    success: boolean;
+    already_joined?: boolean;
+    message?: string;
+    apply_url?: string;
+    data?: { apply_url?: string };
+  };
+};
+
+export interface ApplicationField {
+  id: string;
+  label: string;
+  type: "text" | "number" | "select" | "textarea";
+  required: boolean;
+  options?: string[];
+}
+
+export interface ApplicationAnswer {
+  id: string;
+  label: string;
+  value: string | number | null;
+}
+
+export const getWaitlistApplication = async (token: string) => {
+  const response = await api.get("/waitlist/application", {
+    params: { token },
+  });
+  return response.data as {
+    success: boolean;
+    data: {
+      email: string;
+      submitted: boolean;
+      fields: ApplicationField[];
+      answers: Record<string, string | number | null>;
+      details: ApplicationAnswer[];
+    };
+  };
+};
+
+export const saveWaitlistApplication = async (
+  token: string,
+  answers: Record<string, string | number | "">
+) => {
+  const response = await api.post("/waitlist/application", { token, answers });
+  return response.data as {
+    success: boolean;
+    message: string;
+    data: { email: string; submitted: boolean; details: ApplicationAnswer[] };
+  };
 };
 
 export const setWaitlistName = async (

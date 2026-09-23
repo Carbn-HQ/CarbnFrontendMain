@@ -1,7 +1,11 @@
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { Check } from "lucide-react";
 
 const RegistrationComplete = () => {
+  const location = useLocation();
+  const applyUrl =
+    (location.state as { apply_url?: string } | null)?.apply_url || "";
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4 text-charcoal">
       <div className="w-full max-w-md">
@@ -23,7 +27,21 @@ const RegistrationComplete = () => {
             Your registration was successful. We have sent a confirmation email.
           </p>
           <p className="mt-4 text-sm text-muted-foreground">
-            The CARBN team will review your application. If you are approved, you will get an email to add your full name and set your password.
+            Next, complete your Founding Fifty application so the team can review
+            your details. The same link is in your confirmation email.
+          </p>
+
+          {applyUrl ? (
+            <a
+              href={applyUrl}
+              className="mt-8 inline-flex items-center justify-center rounded-full bg-primary px-7 py-3.5 text-sm font-extrabold uppercase tracking-wider text-primary-foreground"
+            >
+              Complete your application
+            </a>
+          ) : null}
+
+          <p className="mt-4 text-sm text-muted-foreground">
+            If you are approved, you will get an email to add your full name and set your password.
           </p>
 
           <Link

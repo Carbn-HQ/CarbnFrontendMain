@@ -47,6 +47,7 @@ const FoundingBenefits = () => (
 const WaitlistForm = ({ variant = "light" }: { variant?: "light" | "dark" }) => {
   const [email, setEmail] = useState("");
   const [emailError, setEmailError] = useState("");
+  const [applyUrl, setApplyUrl] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
 
@@ -58,8 +59,11 @@ const WaitlistForm = ({ variant = "light" }: { variant?: "light" | "dark" }) => 
       : "border-border bg-white text-charcoal placeholder:text-muted-foreground"
   }`;
 
-  const showAlreadyRegistered = (message?: string) => {
+  const showAlreadyRegistered = (message?: string, nextApplyUrl?: string) => {
     setEmailError(message || "You have already registered.");
+    if (nextApplyUrl) {
+      setApplyUrl(nextApplyUrl);
+    }
   };
 
   const checkEmail = async (value: string) => {
@@ -72,7 +76,7 @@ const WaitlistForm = ({ variant = "light" }: { variant?: "light" | "dark" }) => 
     try {
       const result = await checkWaitlistEmail(trimmed);
       if (result?.registered) {
-        showAlreadyRegistered(result.message);
+        showAlreadyRegistered(result.message, result.apply_url);
         return true;
       }
       setEmailError("");
@@ -89,15 +93,16 @@ const WaitlistForm = ({ variant = "light" }: { variant?: "light" | "dark" }) => 
 
     try {
       const data = await joinWaitlist(email.trim());
+      const nextApplyUrl = data?.data?.apply_url || data?.apply_url;
       if (data?.success) {
         localStorage.setItem("carbn_user_email", email.trim());
         toast({
           title: "You're on the waitlist",
           description: data.message || "Check your email for confirmation.",
         });
-        navigate("/registration-complete");
+        navigate("/registration-complete", { state: { apply_url: nextApplyUrl } });
       } else if (data?.already_joined) {
-        showAlreadyRegistered(data.message);
+        showAlreadyRegistered(data.message, nextApplyUrl);
       } else {
         toast({
           title: "Registration failed",
@@ -106,10 +111,11 @@ const WaitlistForm = ({ variant = "light" }: { variant?: "light" | "dark" }) => 
         });
       }
     } catch (error: unknown) {
-      const payload = (error as { response?: { data?: { message?: string; already_joined?: boolean } } })
-        ?.response?.data;
+      const payload = (error as {
+        response?: { data?: { message?: string; already_joined?: boolean; apply_url?: string } };
+      })?.response?.data;
       if (payload?.already_joined) {
-        showAlreadyRegistered(payload.message);
+        showAlreadyRegistered(payload.message, payload.apply_url);
       } else {
         toast({
           title: "Could not join",
@@ -136,6 +142,7 @@ const WaitlistForm = ({ variant = "light" }: { variant?: "light" | "dark" }) => 
         onChange={(e) => {
           setEmail(e.target.value);
           if (emailError) setEmailError("");
+          if (applyUrl) setApplyUrl("");
         }}
         onBlur={() => {
           void checkEmail(email);
@@ -148,6 +155,16 @@ const WaitlistForm = ({ variant = "light" }: { variant?: "light" | "dark" }) => 
         <p className={`px-1 text-sm font-medium ${isDark ? "text-red-300" : "text-red-600"}`}>
           {emailError}
         </p>
+      ) : null}
+      {applyUrl ? (
+        <a
+          href={applyUrl}
+          className={`px-1 text-sm font-medium underline underline-offset-4 ${
+            isDark ? "text-white" : "text-primary"
+          }`}
+        >
+          Complete your Founding Fifty application
+        </a>
       ) : null}
       <PrimaryButton type="submit" disabled={submitting}>
         {submitting ? "Joining..." : (<>Join the Founding Beta <ArrowRight className="h-4 w-4" /></>)}

@@ -9,6 +9,7 @@ import Login from "./pages/Login.tsx";
 import SetPassword from "./pages/SetPassword.tsx";
 import CompleteProfile from "./pages/CompleteProfile.tsx";
 import RegistrationComplete from "./pages/RegistrationComplete.tsx";
+import Apply from "./pages/Apply.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -26,6 +27,7 @@ const App = () => (
           <Route path="/complete-profile/:id" element={<CompleteProfile />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/registration-complete" element={<RegistrationComplete />} />
+          <Route path="/apply" element={<Apply />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
