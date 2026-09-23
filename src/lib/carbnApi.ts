@@ -95,6 +95,15 @@ export const updateMemberProfile = async (payload: {
   return response.data;
 };
 
+export const changeMemberPassword = async (payload: {
+  current_password: string;
+  new_password: string;
+  confirm_new_password: string;
+}) => {
+  const response = await api.patch("/auth/password", payload);
+  return response.data as { success: boolean; message: string };
+};
+
 export interface SupportReply {
   id: string;
   sender: "admin" | "user";

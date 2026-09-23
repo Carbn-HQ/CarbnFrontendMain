@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { Fragment, useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -20,9 +20,11 @@ import {
   Mic,
   Square,
   FileText,
+  ChevronDown,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import {
+  changeMemberPassword,
   createSupportRequest,
   getChatHistory,
   getCurrentMember,
@@ -34,6 +36,7 @@ import {
   type MetricsPayload,
   type SupportRequest,
 } from "@/lib/carbnApi";
+import { connectRealtime } from "@/lib/realtime";
 import { clearSession, getAccessToken, getStoredMember, saveSession } from "@/lib/session";
 
 type View = "home" | "chat" | "account" | "support";
@@ -496,6 +499,10 @@ const AccountView = ({
 }) => {
   const [name, setName] = useState(fullName);
   const [saving, setSaving] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [savingPassword, setSavingPassword] = useState(false);
 
   useEffect(() => {
     setName(fullName);
@@ -545,11 +552,59 @@ const AccountView = ({
     }
   };
 
+  const savePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentPassword) {
+      toast({
+        title: "Check your password",
+        description: "Enter your current password.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (newPassword.length < 8) {
+      toast({
+        title: "Check your password",
+        description: "New password must contain at least 8 characters.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast({
+        title: "Check your password",
+        description: "New password and confirmation do not match.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSavingPassword(true);
+    try {
+      await changeMemberPassword({
+        current_password: currentPassword,
+        new_password: newPassword,
+        confirm_new_password: confirmPassword,
+      });
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      toast({ title: "Password updated", description: "Your password has been changed." });
+    } catch (error: unknown) {
+      const message =
+        (error as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+        "Could not update your password.";
+      toast({ title: "Could not update", description: message, variant: "destructive" });
+    } finally {
+      setSavingPassword(false);
+    }
+  };
+
   return (
     <div className="max-w-xl space-y-6">
       <div>
         <h1 className="font-display text-2xl font-semibold text-charcoal">Account settings</h1>
-        <p className="text-sm text-muted-foreground">Update the name we use to greet you.</p>
+        <p className="text-sm text-muted-foreground">Update the name we use to greet you, or change your password.</p>
       </div>
       <form onSubmit={save} className="space-y-4 rounded-3xl border border-border bg-card p-6 shadow-soft">
         <div>
@@ -583,6 +638,60 @@ const AccountView = ({
           {saving ? "Saving..." : "Save changes"}
         </button>
       </form>
+      <form onSubmit={savePassword} className="space-y-4 rounded-3xl border border-border bg-card p-6 shadow-soft">
+        <div>
+          <h2 className="font-display text-xl font-semibold text-charcoal">Change password</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Use a new password that is at least 8 characters.</p>
+        </div>
+        <div>
+          <label className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            Current password
+          </label>
+          <input
+            type="password"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            autoComplete="current-password"
+            required
+            className="mt-1.5 w-full rounded-full border border-border bg-background px-5 py-3 text-sm outline-none focus:border-primary"
+          />
+        </div>
+        <div>
+          <label className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            New password
+          </label>
+          <input
+            type="password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            autoComplete="new-password"
+            required
+            minLength={8}
+            className="mt-1.5 w-full rounded-full border border-border bg-background px-5 py-3 text-sm outline-none focus:border-primary"
+          />
+        </div>
+        <div>
+          <label className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            Confirm new password
+          </label>
+          <input
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            autoComplete="new-password"
+            required
+            minLength={8}
+            className="mt-1.5 w-full rounded-full border border-border bg-background px-5 py-3 text-sm outline-none focus:border-primary"
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={savingPassword}
+          className="rounded-full bg-primary px-6 py-3 text-sm font-extrabold uppercase tracking-wider text-primary-foreground hover:bg-[hsl(var(--primary-hover))] disabled:opacity-60"
+        >
+          {savingPassword ? "Updating..." : "Update password"}
+        </button>
+      </form>
     </div>
   );
 };
@@ -603,13 +712,42 @@ const formatSupportDate = (iso: string) =>
     year: "numeric",
   });
 
+const requestReplies = (request: SupportRequest) => {
+  if (request.replies?.length) {
+    return request.replies;
+  }
+  if (request.admin_notes) {
+    return [
+      {
+        id: `${request.id}-note`,
+        sender: "admin" as const,
+        message: request.admin_notes,
+        created_at: request.updated_at || request.created_at,
+      },
+    ];
+  }
+  return [];
+};
+
 const SupportView = () => {
   const [category, setCategory] = useState("");
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [requests, setRequests] = useState<SupportRequest[]>([]);
-  const [selected, setSelected] = useState<SupportRequest | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const upsertRequest = (next: SupportRequest, expand = false) => {
+    setRequests((current) => {
+      const exists = current.some((item) => item.id === next.id);
+      return exists
+        ? current.map((item) => (item.id === next.id ? next : item))
+        : [next, ...current];
+    });
+    if (expand) {
+      setExpandedId(next.id);
+    }
+  };
 
   const loadRequests = async () => {
     try {
@@ -628,6 +766,25 @@ const SupportView = () => {
 
   useEffect(() => {
     void loadRequests();
+
+    const token = getAccessToken();
+    if (!token) {
+      return;
+    }
+
+    return connectRealtime({
+      role: "user",
+      token,
+      onEvent: (event, payload) => {
+        const next = payload.request as SupportRequest | undefined;
+        if (!next?.id) {
+          return;
+        }
+        if (event === "support:reply" || event === "support:updated") {
+          upsertRequest(next, event === "support:reply");
+        }
+      },
+    });
   }, []);
 
   const submit = async (e: React.FormEvent) => {
@@ -647,8 +804,8 @@ const SupportView = () => {
         category,
         message: message.trim(),
       });
-      setRequests((current) => [response.data, ...current]);
-      setSelected(response.data);
+      upsertRequest(response.data);
+      setExpandedId(response.data.id);
       setCategory("");
       setMessage("");
       toast({
@@ -730,73 +887,75 @@ const SupportView = () => {
                   <th className="pb-3 font-semibold">Date</th>
                   <th className="pb-3 font-semibold">Category</th>
                   <th className="pb-3 font-semibold">Status</th>
+                  <th className="w-10 pb-3" />
                 </tr>
               </thead>
               <tbody>
-                {requests.map((request) => (
-                  <tr
-                    key={request.id}
-                    onClick={() => setSelected(request)}
-                    className={`cursor-pointer border-b border-border last:border-0 ${
-                      selected?.id === request.id ? "bg-secondary/70" : "hover:bg-secondary/50"
-                    }`}
-                  >
-                    <td className="py-3 pr-4">{formatSupportDate(request.created_at)}</td>
-                    <td className="py-3 pr-4">{request.category_label}</td>
-                    <td className="py-3">{request.status_label}</td>
-                  </tr>
-                ))}
+                {requests.map((request) => {
+                  const replies = requestReplies(request);
+                  const isExpanded = expandedId === request.id;
+                  const hasReply = replies.length > 0;
+                  return (
+                    <Fragment key={request.id}>
+                      <tr
+                        onClick={() => setExpandedId(isExpanded ? null : request.id)}
+                        className={`cursor-pointer border-b border-border ${
+                          isExpanded ? "bg-secondary/70" : "hover:bg-secondary/50"
+                        }`}
+                      >
+                        <td className="py-3 pr-4">{formatSupportDate(request.created_at)}</td>
+                        <td className="py-3 pr-4">{request.category_label}</td>
+                        <td className="py-3 pr-4">{request.status_label}</td>
+                        <td className="py-3">
+                          <ChevronDown
+                            className={`h-4 w-4 text-muted-foreground transition-transform ${
+                              isExpanded ? "rotate-180" : ""
+                            }`}
+                          />
+                        </td>
+                      </tr>
+                      {isExpanded ? (
+                        <tr className="border-b border-border last:border-0">
+                          <td colSpan={4} className="bg-secondary/40 px-4 py-4">
+                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                              Your message
+                            </p>
+                            <p className="mt-2 whitespace-pre-wrap text-sm text-charcoal">
+                              {request.message}
+                            </p>
+                            {hasReply ? (
+                              <div className="mt-4 space-y-3 border-t border-border pt-4">
+                                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                                  Reply
+                                </p>
+                                {replies.map((reply) => (
+                                  <div key={reply.id} className="rounded-2xl bg-card px-4 py-3">
+                                    <p className="text-xs text-muted-foreground">
+                                      {reply.sender === "admin" ? "CARBN team" : "You"} ·{" "}
+                                      {formatSupportDate(reply.created_at)}
+                                    </p>
+                                    <p className="mt-1 whitespace-pre-wrap text-sm text-charcoal">
+                                      {reply.message}
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="mt-4 text-sm text-muted-foreground">
+                                No reply yet.
+                              </p>
+                            )}
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </div>
-
-      {selected ? (
-        <div className="rounded-3xl border border-border bg-card p-6 shadow-soft">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                Request details
-              </p>
-              <h3 className="mt-1 font-display text-xl font-semibold text-charcoal">
-                {selected.category_label}
-              </h3>
-            </div>
-            <button
-              type="button"
-              onClick={() => setSelected(null)}
-              className="text-sm text-muted-foreground hover:text-charcoal"
-            >
-              Close
-            </button>
-          </div>
-          <p className="mt-3 text-sm text-muted-foreground">
-            {formatSupportDate(selected.created_at)} · {selected.status_label}
-          </p>
-          <p className="mt-4 whitespace-pre-wrap text-sm text-charcoal">{selected.message}</p>
-          {selected.replies?.length ? (
-            <div className="mt-5 space-y-3 border-t border-border pt-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                Replies
-              </p>
-              {selected.replies.map((reply) => (
-                <div key={reply.id} className="rounded-2xl bg-secondary px-4 py-3">
-                  <p className="text-xs text-muted-foreground">
-                    {reply.sender === "admin" ? "CARBN team" : "You"} · {formatSupportDate(reply.created_at)}
-                  </p>
-                  <p className="mt-1 whitespace-pre-wrap text-sm text-charcoal">{reply.message}</p>
-                </div>
-              ))}
-            </div>
-          ) : selected.admin_notes ? (
-            <div className="mt-5 rounded-2xl bg-secondary px-4 py-3">
-              <p className="text-xs text-muted-foreground">CARBN team</p>
-              <p className="mt-1 whitespace-pre-wrap text-sm text-charcoal">{selected.admin_notes}</p>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
     </div>
   );
 };
