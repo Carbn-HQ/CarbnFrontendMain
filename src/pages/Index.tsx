@@ -88,11 +88,6 @@ const WaitlistForm = ({ variant = "light" }: { variant?: "light" | "dark" }) => 
     setSubmitting(true);
 
     try {
-      const alreadyRegistered = await checkEmail(email);
-      if (alreadyRegistered) {
-        return;
-      }
-
       const data = await joinWaitlist(email.trim());
       if (data?.success) {
         localStorage.setItem("carbn_user_email", email.trim());
@@ -154,7 +149,7 @@ const WaitlistForm = ({ variant = "light" }: { variant?: "light" | "dark" }) => 
           {emailError}
         </p>
       ) : null}
-      <PrimaryButton type="submit" disabled={submitting || Boolean(emailError)}>
+      <PrimaryButton type="submit" disabled={submitting}>
         {submitting ? "Joining..." : (<>Join the Founding Beta <ArrowRight className="h-4 w-4" /></>)}
       </PrimaryButton>
     </form>

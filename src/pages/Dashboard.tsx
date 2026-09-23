@@ -23,13 +23,16 @@ import {
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import {
+  createSupportRequest,
   getChatHistory,
   getCurrentMember,
   getMetrics,
+  getSupportRequests,
   sendChatQuestion,
   submitCheckin,
   updateMemberProfile,
   type MetricsPayload,
+  type SupportRequest,
 } from "@/lib/carbnApi";
 import { clearSession, getAccessToken, getStoredMember, saveSession } from "@/lib/session";
 
@@ -484,30 +487,26 @@ const ChatView = ({
 
 const AccountView = ({
   fullName,
-  username,
   email,
   onProfileSaved,
 }: {
   fullName: string;
-  username: string;
   email: string;
-  onProfileSaved: (profile: { firstName: string; fullName: string; username: string }) => void;
+  onProfileSaved: (profile: { firstName: string; fullName: string }) => void;
 }) => {
   const [name, setName] = useState(fullName);
-  const [handle, setHandle] = useState(username);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     setName(fullName);
-    setHandle(username);
-  }, [fullName, username]);
+  }, [fullName]);
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || handle.trim().length < 2) {
+    if (!name.trim()) {
       toast({
         title: "Check your details",
-        description: "Enter your full name and a username of at least 2 characters.",
+        description: "Enter your name so we know how to greet you.",
         variant: "destructive",
       });
       return;
@@ -517,7 +516,6 @@ const AccountView = ({
     try {
       const response = await updateMemberProfile({
         full_name: name.trim(),
-        username: handle.trim(),
       });
       const saved = response.data;
       const member = getStoredMember();
@@ -528,7 +526,6 @@ const AccountView = ({
             ...member,
             first_name: saved.first_name,
             last_name: saved.last_name,
-            username: saved.username,
             full_name: saved.full_name,
           },
         });
@@ -536,9 +533,8 @@ const AccountView = ({
       onProfileSaved({
         firstName: saved?.first_name || name.trim().split(" ")[0],
         fullName: saved?.full_name || name.trim(),
-        username: saved?.username || handle.trim(),
       });
-      toast({ title: "Saved", description: "Your name and username have been updated." });
+      toast({ title: "Saved", description: "Your name has been updated." });
     } catch (error: unknown) {
       const message =
         (error as { response?: { data?: { message?: string } } })?.response?.data?.message ||
@@ -553,7 +549,7 @@ const AccountView = ({
     <div className="max-w-xl space-y-6">
       <div>
         <h1 className="font-display text-2xl font-semibold text-charcoal">Account settings</h1>
-        <p className="text-sm text-muted-foreground">Update your profile details.</p>
+        <p className="text-sm text-muted-foreground">Update the name we use to greet you.</p>
       </div>
       <form onSubmit={save} className="space-y-4 rounded-3xl border border-border bg-card p-6 shadow-soft">
         <div>
@@ -565,20 +561,6 @@ const AccountView = ({
             onChange={(e) => setName(e.target.value)}
             placeholder="Your full name"
             required
-            className="mt-1.5 w-full rounded-full border border-border bg-background px-5 py-3 text-sm outline-none focus:border-primary"
-          />
-        </div>
-        <div>
-          <label className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-            Username
-          </label>
-          <input
-            value={handle}
-            onChange={(e) => setHandle(e.target.value)}
-            placeholder="Username"
-            required
-            minLength={2}
-            maxLength={40}
             className="mt-1.5 w-full rounded-full border border-border bg-background px-5 py-3 text-sm outline-none focus:border-primary"
           />
         </div>
@@ -605,20 +587,204 @@ const AccountView = ({
   );
 };
 
-const SupportView = () => (
-  <div className="max-w-xl space-y-6">
-    <div>
-      <h1 className="font-display text-2xl font-semibold text-charcoal">Contact support</h1>
-      <p className="text-sm text-muted-foreground">We reply within one business day.</p>
+const SUPPORT_CATEGORIES = [
+  { id: "account_access", label: "Account/access" },
+  { id: "technical_issue", label: "Technical issue" },
+  { id: "coaching_issue", label: "Daniel/coaching issue" },
+  { id: "data_privacy", label: "Data/privacy" },
+  { id: "feedback", label: "Feedback/suggestion" },
+  { id: "other", label: "Something else" },
+];
+
+const formatSupportDate = (iso: string) =>
+  new Date(iso).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+
+const SupportView = () => {
+  const [category, setCategory] = useState("");
+  const [message, setMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [requests, setRequests] = useState<SupportRequest[]>([]);
+  const [selected, setSelected] = useState<SupportRequest | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const loadRequests = async () => {
+    try {
+      const response = await getSupportRequests();
+      setRequests(response.data || []);
+    } catch {
+      toast({
+        title: "Could not load requests",
+        description: "Try refreshing to see your support history.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadRequests();
+  }, []);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!category || message.trim().length < 8) {
+      toast({
+        title: "Add a few details",
+        description: "Choose a category and write a short message.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const response = await createSupportRequest({
+        category,
+        message: message.trim(),
+      });
+      setRequests((current) => [response.data, ...current]);
+      setSelected(response.data);
+      setCategory("");
+      setMessage("");
+      toast({
+        title: "Request sent",
+        description: "We have received it and emailed you a confirmation.",
+      });
+    } catch (error: unknown) {
+      const description =
+        (error as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+        "Could not submit your request.";
+      toast({ title: "Could not send", description, variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="max-w-3xl space-y-6">
+      <div>
+        <h1 className="font-display text-2xl font-semibold text-charcoal">Support</h1>
+        <p className="text-sm text-muted-foreground">
+          Send a request in the app. We will email you when it has been received.
+        </p>
+      </div>
+
+      <form onSubmit={submit} className="space-y-4 rounded-3xl border border-border bg-card p-6 shadow-soft">
+        <div>
+          <label className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            Category
+          </label>
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            required
+            className="mt-1.5 w-full rounded-full border border-border bg-background px-5 py-3 text-sm outline-none focus:border-primary"
+          >
+            <option value="">Select a category</option>
+            {SUPPORT_CATEGORIES.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            Message
+          </label>
+          <textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            required
+            minLength={8}
+            rows={5}
+            placeholder="Tell us what you need help with."
+            className="mt-1.5 w-full rounded-2xl border border-border bg-background px-5 py-3 text-sm outline-none focus:border-primary"
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={submitting}
+          className="rounded-full bg-primary px-6 py-3 text-sm font-extrabold uppercase tracking-wider text-primary-foreground hover:bg-[hsl(var(--primary-hover))] disabled:opacity-60"
+        >
+          {submitting ? "Sending..." : "Submit request"}
+        </button>
+      </form>
+
+      <div className="rounded-3xl border border-border bg-card p-6 shadow-soft">
+        <h2 className="font-display text-xl font-semibold text-charcoal">Your requests</h2>
+        {loading ? (
+          <p className="mt-4 text-sm text-muted-foreground">Loading your requests…</p>
+        ) : requests.length === 0 ? (
+          <p className="mt-4 text-sm text-muted-foreground">You have not submitted any requests yet.</p>
+        ) : (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[420px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-border text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                  <th className="pb-3 font-semibold">Date</th>
+                  <th className="pb-3 font-semibold">Category</th>
+                  <th className="pb-3 font-semibold">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {requests.map((request) => (
+                  <tr
+                    key={request.id}
+                    onClick={() => setSelected(request)}
+                    className={`cursor-pointer border-b border-border last:border-0 ${
+                      selected?.id === request.id ? "bg-secondary/70" : "hover:bg-secondary/50"
+                    }`}
+                  >
+                    <td className="py-3 pr-4">{formatSupportDate(request.created_at)}</td>
+                    <td className="py-3 pr-4">{request.category_label}</td>
+                    <td className="py-3">{request.status_label}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {selected ? (
+        <div className="rounded-3xl border border-border bg-card p-6 shadow-soft">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                Request details
+              </p>
+              <h3 className="mt-1 font-display text-xl font-semibold text-charcoal">
+                {selected.category_label}
+              </h3>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSelected(null)}
+              className="text-sm text-muted-foreground hover:text-charcoal"
+            >
+              Close
+            </button>
+          </div>
+          <p className="mt-3 text-sm text-muted-foreground">
+            {formatSupportDate(selected.created_at)} · {selected.status_label}
+          </p>
+          <p className="mt-4 whitespace-pre-wrap text-sm text-charcoal">{selected.message}</p>
+          {selected.admin_notes ? (
+            <p className="mt-4 text-sm text-muted-foreground">
+              Team note: {selected.admin_notes}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
     </div>
-    <div className="rounded-3xl border border-border bg-card p-6 shadow-soft">
-      <p className="text-sm text-muted-foreground">Email</p>
-      <a href="mailto:support@carbn.app" className="mt-1 block font-display text-xl font-semibold text-charcoal hover:text-primary">
-        support@carbn.app
-      </a>
-    </div>
-  </div>
-);
+  );
+};
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -632,7 +798,6 @@ const Dashboard = () => {
     [storedMember?.first_name, storedMember?.last_name].filter(Boolean).join(" ");
   const [firstName, setFirstName] = useState(storedMember?.first_name || "there");
   const [fullName, setFullName] = useState(storedFullName);
-  const [username, setUsername] = useState(storedMember?.username || "");
   const [email, setEmail] = useState(storedMember?.email || "");
 
   useEffect(() => {
@@ -652,9 +817,6 @@ const Dashboard = () => {
               [profile.first_name, profile.last_name].filter(Boolean).join(" ")
           );
         }
-        if (profile?.username) {
-          setUsername(profile.username);
-        }
         if (profile?.email) {
           setEmail(profile.email);
         }
@@ -666,7 +828,6 @@ const Dashboard = () => {
               ...current,
               first_name: profile.first_name,
               last_name: profile.last_name,
-              username: profile.username,
               full_name: profile.full_name,
               email: profile.email,
             },
@@ -791,12 +952,10 @@ const Dashboard = () => {
           {view === "account" && (
             <AccountView
               fullName={fullName}
-              username={username}
               email={email}
-              onProfileSaved={({ firstName: nextFirst, fullName: nextFull, username: nextUser }) => {
+              onProfileSaved={({ firstName: nextFirst, fullName: nextFull }) => {
                 setFirstName(nextFirst);
                 setFullName(nextFull);
-                setUsername(nextUser);
               }}
             />
           )}

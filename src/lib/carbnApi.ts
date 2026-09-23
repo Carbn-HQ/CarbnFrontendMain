@@ -17,9 +17,9 @@ export const joinWaitlist = async (email: string) => {
   return response.data;
 };
 
-export const setWaitlistUsername = async (
+export const setWaitlistName = async (
   leadId: string,
-  payload: { username: string; last_name?: string; full_name?: string }
+  payload: { full_name: string; first_name?: string; last_name?: string }
 ) => {
   const response = await api.put(`/waitlist/${leadId}/username`, payload);
   return response.data;
@@ -60,7 +60,7 @@ export const getActivationProfile = async (token: string) => {
 
 export const saveActivationProfile = async (
   token: string,
-  payload: { full_name: string; username: string }
+  payload: { full_name: string }
 ) => {
   const response = await api.patch("/auth/activation-profile", payload, {
     headers: { Authorization: `Bearer ${token}` },
@@ -90,10 +90,41 @@ export const getCurrentMember = async () => {
 
 export const updateMemberProfile = async (payload: {
   full_name: string;
-  username: string;
 }) => {
   const response = await api.patch("/auth/me", payload);
   return response.data;
+};
+
+export interface SupportRequest {
+  id: string;
+  category: string;
+  category_label: string;
+  subject: string;
+  message: string;
+  status: string;
+  status_label: string;
+  admin_notes?: string | null;
+  created_at: string;
+  updated_at?: string;
+  resolved_at?: string | null;
+}
+
+export const getSupportRequests = async () => {
+  const response = await api.get("/support");
+  return response.data as { success: boolean; data: SupportRequest[] };
+};
+
+export const getSupportRequest = async (id: string) => {
+  const response = await api.get(`/support/${id}`);
+  return response.data as { success: boolean; data: SupportRequest };
+};
+
+export const createSupportRequest = async (payload: {
+  category: string;
+  message: string;
+}) => {
+  const response = await api.post("/support", payload);
+  return response.data as { success: boolean; message: string; data: SupportRequest };
 };
 
 export const sendChatQuestion = async (question: string, files: File[] = []) => {

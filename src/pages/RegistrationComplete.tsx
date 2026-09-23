@@ -1,15 +1,7 @@
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Check } from "lucide-react";
 
 const RegistrationComplete = () => {
-  const [firstName, setFirstName] = useState("");
-
-  useEffect(() => {
-    const name = localStorage.getItem("carbn_user_firstname");
-    if (name) setFirstName(name);
-  }, []);
-
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4 text-charcoal">
       <div className="w-full max-w-md">
@@ -28,12 +20,10 @@ const RegistrationComplete = () => {
             Application received
           </h1>
           <p className="mt-2 text-muted-foreground">
-            {firstName
-              ? `Thanks, ${firstName}. Your application is in, and your username has been saved.`
-              : "Check your email to set your username and finish this step."}
+            Your registration was successful. We have sent a confirmation email.
           </p>
           <p className="mt-4 text-sm text-muted-foreground">
-            The CARBN team will review your application. If you are approved, you will get an email with a link to set your password. After that, we will greet you by name on your dashboard.
+            The CARBN team will review your application. If you are approved, you will get an email to add your full name and set your password.
           </p>
 
           <Link

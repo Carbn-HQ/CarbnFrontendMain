@@ -28,6 +28,7 @@ const readInviteFromUrl = () => {
 
 const SetPassword = () => {
   const navigate = useNavigate();
+  const [fullName, setFullName] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -86,6 +87,14 @@ const SetPassword = () => {
       });
       return;
     }
+    if (fullName.trim().length < 2) {
+      toast({
+        title: "Enter your full name",
+        description: "We use your first name to greet you.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (password.length < 8) {
       toast({
         title: "Password too short",
@@ -107,8 +116,10 @@ const SetPassword = () => {
       const result = await setMemberPassword(token, {
         password,
         confirm_password: confirmPassword,
+        full_name: fullName.trim(),
       });
       const email = result?.data?.member?.email || result?.data?.user?.email;
+      const firstName = fullName.trim().split(/\s+/)[0];
       if (email) {
         const login = await loginMember(email, password);
         saveSession({
@@ -118,7 +129,7 @@ const SetPassword = () => {
         });
         toast({
           title: "Account activated",
-          description: "Your password is set. Welcome to CARBN.",
+          description: `Welcome, ${firstName}.`,
         });
         navigate("/dashboard");
         return;
@@ -144,33 +155,58 @@ const SetPassword = () => {
           </Link>
         </div>
         <div className="rounded-3xl bg-card p-8 shadow-soft">
-          <h1 className="font-display text-2xl font-semibold text-charcoal">Set your password</h1>
+          <h1 className="font-display text-2xl font-semibold text-charcoal">Complete your account</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Create a password to activate your Founding Fifty account.
+            Add your full name, then set and confirm your password to activate your Founding Fifty account.
           </p>
 
           {loadingInvite ? (
             <p className="mt-6 text-sm text-muted-foreground">Opening your invitation…</p>
           ) : (
             <form onSubmit={activate} className="mt-6 flex flex-col gap-4">
-              <input
-                type="password"
-                required
-                minLength={8}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="New password"
-                className={inputClass}
-              />
-              <input
-                type="password"
-                required
-                minLength={8}
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Confirm password"
-                className={inputClass}
-              />
+              <label className="text-sm font-medium text-charcoal">
+                Full name
+                <input
+                  type="text"
+                  name="full_name"
+                  autoComplete="name"
+                  required
+                  minLength={2}
+                  maxLength={80}
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Enter your full name"
+                  className={`${inputClass} mt-1.5`}
+                />
+              </label>
+              <label className="text-sm font-medium text-charcoal">
+                Password
+                <input
+                  type="password"
+                  name="password"
+                  autoComplete="new-password"
+                  required
+                  minLength={8}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Create a password"
+                  className={`${inputClass} mt-1.5`}
+                />
+              </label>
+              <label className="text-sm font-medium text-charcoal">
+                Confirm password
+                <input
+                  type="password"
+                  name="confirm_password"
+                  autoComplete="new-password"
+                  required
+                  minLength={8}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Confirm your password"
+                  className={`${inputClass} mt-1.5`}
+                />
+              </label>
               <button
                 type="submit"
                 disabled={submitting || !token}
