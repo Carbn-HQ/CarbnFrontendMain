@@ -775,10 +775,25 @@ const SupportView = () => {
             {formatSupportDate(selected.created_at)} · {selected.status_label}
           </p>
           <p className="mt-4 whitespace-pre-wrap text-sm text-charcoal">{selected.message}</p>
-          {selected.admin_notes ? (
-            <p className="mt-4 text-sm text-muted-foreground">
-              Team note: {selected.admin_notes}
-            </p>
+          {selected.replies?.length ? (
+            <div className="mt-5 space-y-3 border-t border-border pt-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                Replies
+              </p>
+              {selected.replies.map((reply) => (
+                <div key={reply.id} className="rounded-2xl bg-secondary px-4 py-3">
+                  <p className="text-xs text-muted-foreground">
+                    {reply.sender === "admin" ? "CARBN team" : "You"} · {formatSupportDate(reply.created_at)}
+                  </p>
+                  <p className="mt-1 whitespace-pre-wrap text-sm text-charcoal">{reply.message}</p>
+                </div>
+              ))}
+            </div>
+          ) : selected.admin_notes ? (
+            <div className="mt-5 rounded-2xl bg-secondary px-4 py-3">
+              <p className="text-xs text-muted-foreground">CARBN team</p>
+              <p className="mt-1 whitespace-pre-wrap text-sm text-charcoal">{selected.admin_notes}</p>
+            </div>
           ) : null}
         </div>
       ) : null}

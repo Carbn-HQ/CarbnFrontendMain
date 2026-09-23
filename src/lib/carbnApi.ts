@@ -95,6 +95,13 @@ export const updateMemberProfile = async (payload: {
   return response.data;
 };
 
+export interface SupportReply {
+  id: string;
+  sender: "admin" | "user";
+  message: string;
+  created_at: string;
+}
+
 export interface SupportRequest {
   id: string;
   category: string;
@@ -104,6 +111,7 @@ export interface SupportRequest {
   status: string;
   status_label: string;
   admin_notes?: string | null;
+  replies?: SupportReply[];
   created_at: string;
   updated_at?: string;
   resolved_at?: string | null;
