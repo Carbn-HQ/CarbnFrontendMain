@@ -27,9 +27,10 @@ export const joinWaitlist = async (email: string) => {
 export interface ApplicationField {
   id: string;
   label: string;
-  type: "text" | "number" | "select" | "textarea";
+  type: "text" | "number" | "select" | "textarea" | "searchable_select" | "multiselect";
   required: boolean;
   options?: string[];
+  placeholder?: string;
 }
 
 export interface ApplicationAnswer {
@@ -56,7 +57,7 @@ export const getWaitlistApplication = async (token: string) => {
 
 export const saveWaitlistApplication = async (
   token: string,
-  answers: Record<string, string | number | "">
+  answers: Record<string, string | number | string[] | "">
 ) => {
   const response = await api.post("/waitlist/application", { token, answers });
   return response.data as {
